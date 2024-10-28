@@ -65,16 +65,15 @@ def main():
         mode="w",
         newline="",
     ) as csvfile:
+        # Open CSV file for writing
+        fieldnames = ["timestamp", "aruco_ids"]
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
         for video in videos:
             cap = cv2.VideoCapture(video)
             if not cap.isOpened():
                 print("Error: Cannot open video source")
                 return
-
-            # Open CSV file for writing
-            fieldnames = ["timestamp", "aruco_ids"]
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-            writer.writeheader()
 
             # Variable to track the last second and the detected IDs within that second
             last_recorded_second = -1
