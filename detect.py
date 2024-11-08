@@ -3,6 +3,7 @@ import csv
 import datetime
 import os
 import sys
+import numpy as np
 
 DICTIONARY = (
     cv2.aruco.DICT_5X5_100
@@ -24,12 +25,29 @@ def detect_aruco_tags(frame):
 
     # Detect ArUco markers in the frame
     corners, ids, rejectedImgPoints = detector.detectMarkers(gray)
+    close_ids = np.array([])
+
+    # If markers are detected, find the one closest to the center
+    if ids is not None:
+        frame_center_y = gray.shape[0] // 2
+        min_distance = float("inf")
+        closest_id = None
+        for i, corner in enumerate(corners):
+            # Calculate the center of the marker
+            marker_center_y = corner[0].mean(axis=0)[1]
+            distance = abs(marker_center_y - frame_center_y)
+            if distance < min_distance:
+                min_distance = distance
+                closest_id = ids[i]
+
+        # Only keep the closest id
+        close_ids = np.array([closest_id])
 
     # If markers are detected, draw them on the frame
     if ids is not None:
         cv2.aruco.drawDetectedMarkers(frame, corners, ids)
 
-    return ids
+    return close_ids
 
 
 def parse_start_time_from_filename(filename):
@@ -42,14 +60,16 @@ def parse_start_time_from_filename(filename):
 
 
 def main():
-    video_name = "videos/P3_videos/20241015163430_000086.MP4"  # Example filename, change to your actual file
+    # video_name = "videos/P3_videos/20241015163430_000086.MP4"  # Example filename, change to your actual file
     videos = []
-    for s in sys.argv[1:]:
-        videos.append(s)
+    input_folder = sys.argv[1]
+    for filename in os.listdir(input_folder):
+        if filename.endswith(".MP4"):  # Assuming video files have .MP4 extension
+            videos.append(os.path.join(input_folder, filename))
 
     # print(sys.argv)
-    if not os.path.exists(video_name):
-        print("Error: Video file not found!")
+    # if not os.path.exists(video_name):
+    #     print("Error: Video file not found!")
     start_time = parse_start_time_from_filename(videos[0])
 
     # Create the directory if it does not exist
@@ -79,6 +99,8 @@ def main():
             last_recorded_second = -1
             ids_per_second = []
 
+            start_time = parse_start_time_from_filename(video)
+
             while True:
                 ret, frame = cap.read()
                 if not ret:
@@ -86,6 +108,11 @@ def main():
                     break
 
                 print("Frame shape:", frame.shape)  # Debugging frame shape
+
+                # height, width, _ = frame.shape
+                # start_col = width // 4
+                # end_col = start_col + (width // 2)
+                # frame = frame[:, start_col:end_col]
 
                 ids = detect_aruco_tags(frame)
 
@@ -103,15 +130,20 @@ def main():
                     if ids is not None:
                         new_ids = ids.flatten().tolist()
                         # Update the detected IDs for the current second, adding any new ones
-                        ids_per_second = list(set(ids_per_second + new_ids))
+                        ids_per_second = list(ids_per_second + new_ids)
 
                 # If a new second has started, write the previous second's data and reset
                 if elapsed_seconds != last_recorded_second:
                     # Write the IDs for the previous second if not the first frame
                     if last_recorded_second != -1:
-                        id_named = []
-                        for i in ids_per_second:
-                            id_named.append(aruco_dict.get(i))
+                        id_named = None
+                        # for i in ids_per_second:
+                        #     id_named.append(aruco_dict.get(i))
+                        if ids_per_second:
+                            most_frequent_id = max(
+                                set(ids_per_second), key=ids_per_second.count
+                            )
+                            id_named = aruco_dict.get(most_frequent_id)
                         writer.writerow(
                             {
                                 "timestamp": actual_timestamp.strftime(
@@ -136,16 +168,21 @@ def main():
 
             # Write the remaining data for the last second when the video ends
             if ids_per_second:
-                id_named = []
-                for i in ids_per_second:
-                    id_named.append(aruco_dict.get(i))
+                id_named = None
+                # for i in ids_per_second:
+                #     id_named.append(aruco_dict.get(i))
+                if ids_per_second:
+                    most_frequent_id = max(
+                        set(ids_per_second), key=ids_per_second.count
+                    )
+                    id_named = aruco_dict.get(most_frequent_id)
                 writer.writerow(
                     {
                         "timestamp": actual_timestamp.strftime("%Y-%m-%d %H:%M:%S"),
                         "aruco_ids": id_named,
                     }
                 )
-
+            start_time = actual_timestamp
             cap.release()
     cv2.destroyAllWindows()
 
